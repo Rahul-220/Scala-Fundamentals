@@ -1,4 +1,3 @@
-// Databricks notebook source
 // Implementation using Normal Matrix Multiplication of XtX:
 // Step 1 and 2: Computing XT_X:
 import org.apache.spark.rdd.RDD
@@ -48,9 +47,9 @@ val theta: DenseVector[Double] = xTxInverse * XT_Y_Dense
 println("Theta: ")
 println(theta)
 
-// COMMAND ----------
+//----------------------------------------------------------------------
 
-// Implementation using Outer Product Method:(Bonus 1)
+// Implementation using Outer Product Method:
 import org.apache.spark.rdd.RDD
 import breeze.linalg.{DenseMatrix, DenseVector, pinv}
 
