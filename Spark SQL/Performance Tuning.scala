@@ -1,25 +1,15 @@
-// Databricks notebook source
-// MAGIC %md
-// MAGIC #### Catalog
-
-// COMMAND ----------
+// #### Catalog
 
 val df = Seq((1, "andy"), (2, "bob"), (2, "andy")).toDF("count", "name")                                                    
 df.createOrReplaceTempView("temp_view1")
 display(spark.catalog.listTables)
 
-// COMMAND ----------
-
 spark.conf.set("spark.databricks.io.cache.enabled", "false")
 spark.conf.set("spark.sql.adaptive.enabled", "false")
 spark.conf.set("spark.sql.autoBroadcastJoinThreshold", -1)
 
-// COMMAND ----------
-
-// MAGIC %md
-// MAGIC #### Catalyst: Predicate Pushdown
-
-// COMMAND ----------
+ 
+// #### Catalyst: Predicate Pushdown
 
 val empDF = spark.read.parquet("dbfs:/FileStore/tables/emp_snappy.parquet/")
 val deptDF = spark.read.parquet("dbfs:/FileStore/tables/dept_snappy.parquet/")
@@ -30,17 +20,11 @@ spark.read.parquet("dbfs:/FileStore/tables/dept_snappy.parquet/").createOrReplac
 empDF.show(2)
 deptDF.show(2)
 
-// COMMAND ----------
-
 //In first 2 Plans Catalyst does JOIN, then does FILTER, but in Optimized Plan, Catalyst moves the FILTER before the JOIN for better Performance
 val result = spark.sql("SELECT e.last_name, d.dept FROM emp_view e INNER JOIN dept_view d ON e.dept=d.dept WHERE e.dept = 301").explain(true)
 
-// COMMAND ----------
 
-// MAGIC %md
-// MAGIC #### Catalyst: Change Join Strategy
-
-// COMMAND ----------
+//  #### Catalyst: Change Join Strategy
 
 spark.read.format("parquet").load("dbfs:/FileStore/tables/cops_02_snappy.parquet").createOrReplaceTempView("cops_view1")
 spark.read.format("parquet").load("dbfs:/FileStore/tables/cops_03_snappy.parquet").createOrReplaceTempView("cops_view2")
@@ -49,11 +33,7 @@ spark.read.format("parquet").load("dbfs:/FileStore/tables/cops_03_snappy.parquet
 // Without a Hint, Catalyst uses Join Strategy = 'SortMergeJoin'
 spark.sql("SELECT a.Category, b.PdDistrict FROM cops_view1 a JOIN cops_view2 b ON a.Time = b.Time").explain(true)
 
-// COMMAND ----------
-
 display(dbutils.fs.ls("dbfs:/FileStore/tables"))
-
-// COMMAND ----------
 
 // Tell Catalyst it's OK to do BroadcastHashJoin on Table up to 50MB 
 spark.sql("SET spark.sql.autoBroadcastJoinThreshold = 52428800")
@@ -61,12 +41,7 @@ spark.sql("SET spark.sql.autoBroadcastJoinThreshold = 52428800")
 // Tell Catalyst to broadcast 'cops_view2' table
 spark.sql("SELECT /*+ BROADCAST(cops_view2) */ * FROM cops_view1 a JOIN cops_view2 b ON a.Time = b.Time").explain(true)
 
-// COMMAND ----------
-
-// MAGIC %md
-// MAGIC #### Catalyst: Column Pruning
-
-// COMMAND ----------
+// #### Catalyst: Column Pruning
 
 import org.apache.spark.sql.types.{StructType, StructField, StringType}
 
@@ -91,27 +66,18 @@ display(CSVColPruneDF)
 CSVColPruneDF.write.format("parquet").mode("overwrite").save("/tmp/parquet_colPrune/")
 val ParquetColPruneDF = spark.read.format("parquet").load("/tmp/parquet_colPrune/")
 
-// COMMAND ----------
-
+ 
 display(CSVColPruneDF.select("Category", "Description"))
 //Go to Spark UI->SQL Tab-> Click the link under Description-> Click Scan CSV-> Check size of files read
 
-// COMMAND ----------
-
+ 
 display(ParquetColPruneDF.select("Category", "Description"))
 //Go to Spark UI->SQL Tab-> Click the link under Description-> Click Scan Parquet-> Check size of files read
 
-// COMMAND ----------
-
-// MAGIC %md
-// MAGIC #### Tungsten: Improved Memory Usage
-
-// COMMAND ----------
+// #### Tungsten: Improved Memory Usage
 
 // Do this first to prevent side effects
 spark.conf.set("spark.databricks.io.cache.enabled", false)
-
-// COMMAND ----------
 
 import org.apache.spark.storage.StorageLevel
 
@@ -125,27 +91,14 @@ val df1 = spark.read.option("header" , "true").option("inferSchema", "true").csv
 val df2 = df1.persist(StorageLevel.MEMORY_ONLY_SER)
 df2.count()
 
-// COMMAND ----------
-
-// MAGIC %md
-// MAGIC #### Tungsten: Whole Stage Code Generation
-
-// COMMAND ----------
+// #### Tungsten: Whole Stage Code Generation
 
 spark.range(1000).filter("id > 100").selectExpr("sum(id)").show()
 //Go to SQL tab-> Click the job under Description and see WholeStageCodeGen fusing the operations
 
-// COMMAND ----------
+// #### Adaptive Query Optimization
 
-// MAGIC %md
-// MAGIC #### Adaptive Query Optimization
-
-// COMMAND ----------
-
-// MAGIC %md 
-// MAGIC ##### AQE: Coalesce Shuffle Partitions
-
-// COMMAND ----------
+// ##### AQE: Coalesce Shuffle Partitions
 
 // Disable BroadcastHashJoins to force a SortMergeJoin
 spark.conf.set("spark.sql.autoBroadcastJoinThreshold",-1)  
@@ -156,8 +109,6 @@ spark.conf.set("spark.sql.adaptive.enabled",false)
 // Force # of Shuffle Partitions = 50 as MAX. Default = 200
 spark.conf.set("spark.sql.shuffle.partitions", 50)
 
-// COMMAND ----------
-
 spark.read.format("parquet").load("dbfs:/FileStore/tables/sample_parq/").createOrReplaceTempView("sample")
 
 spark.read.format("parquet").load("dbfs:/FileStore/tables/lookup_parq/").createOrReplaceTempView("lookup")
@@ -165,20 +116,15 @@ spark.read.format("parquet").load("dbfs:/FileStore/tables/lookup_parq/").createO
 // Notice 'company_id' = 1 will be a large Partition when compared to rest when JOIN on 'company_id' column
 display(spark.sql("SELECT company_id, count(tx_id) as transactions FROM sample GROUP BY company_id ORDER BY transactions DESC LIMIT 10"))
 
-// COMMAND ----------
-
 // Here's other Table we will be JOINing
 display(spark.sql("SELECT * FROM lookup ORDER BY id"))
 
-// COMMAND ----------
 
 //Notice Hint to force SortMergeJoin (another Spark 3.x functionality) 
 //From Spark UI -> SQL -> -> Click the job under Description -> Details  
 //Notice Lack of 'AQEShuffleRead' in DAG, only says 'Exchange'
 
 display(spark.sql("SELECT /*+MERGE(sample, lookup)*/sample.tx_id, lookup.company FROM sample JOIN lookup ON sample.company_id = lookup.id"))
-
-// COMMAND ----------
 
 //Enable both AQE and Coalesce Partitions
 spark.conf.set("spark.sql.adaptive.enabled", true)
@@ -187,25 +133,18 @@ spark.conf.set("spark.sql.adaptive.enabled", true)
 // (specified by 'spark.sql.adaptive.advisoryPartitionSizeInBytes'), to avoid too many small tasks.
 spark.conf.set("spark.sql.adaptive.coalescePartitions", true)
 
-// COMMAND ----------
-
+ 
 //Drop HINT to force SORT MERGE JOIN (instead of BroadcastHashJoin)
 //With AQE, it will Coalesce Shuffle Partitions
 ////From Spark UI -> SQL -> -> Click the job under Description -> Details  
 //Notice 'AQEShuffleRead'
 display(spark.sql("SELECT /*+MERGE(sample, lookup)*/ sample.tx_id, lookup.company, sample.field1 FROM sample JOIN lookup ON sample.company_id = lookup.id"))
 
-// COMMAND ----------
 
-// MAGIC %md
-// MAGIC ##### AQE: Converting SortMergeJoin to BroadcastHashJoin
-
-// COMMAND ----------
+//  ##### AQE: Converting SortMergeJoin to BroadcastHashJoin
 
 display(spark.read.parquet("dbfs:/FileStore/tables/emp_snappy.parquet/"))
 display(spark.read.format("parquet").load("dbfs:/FileStore/tables/dept_snappy.parquet/"))
-
-// COMMAND ----------
 
 val mpDF = spark.read.format("parquet").load("dbfs:/FileStore/tables/emp_snappy.parquet/")
 val deptDF = spark.read.format("parquet").load("dbfs:/FileStore/tables/dept_snappy.parquet/")
@@ -214,18 +153,12 @@ val deptDF = spark.read.format("parquet").load("dbfs:/FileStore/tables/dept_snap
 empDF.createOrReplaceTempView("emp_view")
 deptDF.createOrReplaceTempView("dept_view")
 
-// COMMAND ----------
-
 //Turn off both BroadcastHashJoins and AQE
 spark.conf.set("spark.sql.autoBroadcastJoinThreshold",-1)  
 spark.conf.set("spark.sql.adaptive.enabled",false)
 
-// COMMAND ----------
-
 //SortMergeJoin (Spark UI-> SQL tab -> click on the job under Description-> notice SortMergeJoin)
 display(empDF.join(deptDF, "dept").select("last_name", "dept", "dept_name").limit(4))
-
-// COMMAND ----------
 
 //Turn on BroadcastHashJoin and AQE and execute again.
 //         (Open any Job -> SQL -> Click on Description)
@@ -236,25 +169,19 @@ spark.conf.set("spark.sql.adaptive.enabled",true)
 
 display(empDF.join(deptDF, "dept").select("last_name", "dept", "dept_name"))
 
-// COMMAND ----------
-
-// MAGIC %md
-// MAGIC ##### AQE: Optimizing Skew Join
-
-// COMMAND ----------
+ 
+// ##### AQE: Optimizing Skew Join
 
 spark.conf.set("spark.sql.shuffle.partitions", 200)
 val t1DF = spark.read.parquet("dbfs:/FileStore/tables/t1/")
 t1DF.createOrReplaceTempView("t1_view")
 t1DF.show
 
-// COMMAND ----------
 
 val t2DF = spark.read.parquet("dbfs:/FileStore/tables/t2/")
 t2DF.createOrReplaceTempView("t2_view")
 t2DF.show
 
-// COMMAND ----------
 
 val resultDF = spark.sql("""
   SELECT make, model, COUNT(*) AS cnt
@@ -265,7 +192,6 @@ val resultDF = spark.sql("""
 
 resultDF.show()
 
-// COMMAND ----------
 
 //View Spark UI-> Stages-> Check Shuffle read and write and duration of the jobs.  It's a Skew Partition issue (2 minute query)
 import org.apache.spark.sql.functions._
@@ -282,7 +208,7 @@ display(t1DF.join(t2DF, Seq("make", "model"))
   .groupBy("registration")
   .agg(avg("sale_price").as("average_price")).collect())
 
-// COMMAND ----------
+ 
 
 //Let AQE and let it figure out the Skew problem and fix it automatically
 // First configure the Settings
@@ -301,7 +227,7 @@ spark.conf.set("spark.sql.adaptive.skewedPartitionFactor", 5)
 spark.conf.set("spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes","50KB")
 spark.conf.set("spark.sql.adaptive.advisoryPartitionSizeInBytes", "10KB")
 
-// COMMAND ----------
+ 
 
 //Solution: Let AQE figure out the Skew problem and fix it automatically
 
@@ -309,8 +235,3 @@ display(t1DF.join(t2DF, Seq("make", "model"))
 .filter(abs(t2DF("engine_size") - t1DF("engine_size")) <= BigDecimal("0.1"))
   .groupBy("registration")
   .agg(avg("sale_price").as("average_price")))
-
-// COMMAND ----------
-
-
-
